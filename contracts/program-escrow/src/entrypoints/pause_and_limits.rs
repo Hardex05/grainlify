@@ -965,4 +965,90 @@ mod set_paused_lifecycle_tests {
         // No flags set -> any_paused false -> reason cleared, terminal preserved.
         assert_terminal(&flags);
     }
+
+    // State: Unpaused (terminal) — init_threshold_monitoring from terminal state.
+    #[test]
+    fn init_threshold_monitoring_from_unpaused_terminal_state() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(1100);
+
+        let before = client.get_pause_flags();
+        assert_terminal(&before);
+
+        client.init_threshold_monitoring();
+
+        let after = client.get_pause_flags();
+        assert_terminal(&after);
+        assert_eq!(after.paused_at, before.paused_at);
+        assert_eq!(after.pause_reason, before.pause_reason);
+    }
+
+    // State: LockPaused — init_threshold_monitoring must not mutate pause flags.
+    #[test]
+    fn init_threshold_monitoring_from_lock_paused_state() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(1200);
+
+        client.set_paused(&Some(true), &None, &None, &None, &None);
+        let before = client.get_pause_flags();
+        assert!(before.lock_paused);
+        assert_eq!(before.paused_at, 1200);
+
+        client.init_threshold_monitoring();
+
+        let after = client.get_pause_flags();
+        assert_eq!(after.lock_paused, before.lock_paused);
+        assert_eq!(after.release_paused, before.release_paused);
+        assert_eq!(after.refund_paused, before.refund_paused);
+        assert_eq!(after.paused_at, before.paused_at);
+        assert_eq!(after.pause_reason, before.pause_reason);
+    }
+
+    // State: AllPaused — init_threshold_monitoring must not mutate pause flags.
+    #[test]
+    fn init_threshold_monitoring_from_all_paused_state() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(1300);
+
+        client.set_paused(
+            &Some(true),
+            &Some(true),
+            &Some(true),
+            &Some(String::from_str(&env, "all")),
+            &None,
+        );
+        let before = client.get_pause_flags();
+        assert!(before.lock_paused);
+        assert!(before.release_paused);
+        assert!(before.refund_paused);
+        assert_eq!(before.paused_at, 1300);
+
+        client.init_threshold_monitoring();
+
+        let after = client.get_pause_flags();
+        assert_eq!(after.lock_paused, before.lock_paused);
+        assert_eq!(after.release_paused, before.release_paused);
+        assert_eq!(after.refund_paused, before.refund_paused);
+        assert_eq!(after.paused_at, before.paused_at);
+        assert_eq!(after.pause_reason, before.pause_reason);
+    }
+
+    // State: Terminal (unpaused after all-paused) — refused/no-op call must not mutate.
+    #[test]
+    fn init_threshold_monitoring_from_terminal_state_does_not_mutate() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(1400);
+
+        client.set_paused(&Some(true), &Some(true), &Some(true), &None, &None);
+        client.set_paused(&Some(false), &Some(false), &Some(false), &None, &None);
+        let before = client.get_pause_flags();
+        assert_terminal(&before);
+
+        client.init_threshold_monitoring();
+
+        let after = client.get_pause_flags();
+        assert_terminal(&after);
+        assert_eq!(after.paused_at, before.paused_at);
+        assert_eq!(after.pause_reason, before.pause_reason);
+    }
 }
